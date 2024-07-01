@@ -19,14 +19,22 @@ from @my_s3_stage
 file_format = json_format;
 
 
+-- add in column for date of each market in raw_data
+CREATE OR REPLACE TABLE raw_data_with_date AS
+SELECT 
+    *,
+    TO_DATE(REGEXP_SUBSTR(METADATA$FILENAME, '\\d{8}', 1, 1, 'e'), 'MMDDYYYY') AS market_date
+FROM @my_s3_stage
+(FILE_FORMAT => json_format);
+
 -- Make sure data got loaded in correctly
 SELECT *
-FROM raw_data;
+FROM raw_data_with_date;
 
 
 -- Normalization
 -- First table: market dimension table )
-CREATE TABLE market_dim_bronze AS (
+CREATE OR REPLACE TABLE market_dim_bronze AS (
     
     SELECT
         unnested.value:ID::NUMERIC AS market_id,
@@ -42,8 +50,8 @@ CREATE TABLE market_dim_bronze AS (
 ;
 
 
--- Contract table
-CREATE TABLE contract_fact_bronze AS (
+-- Contract table DDL
+CREATE OR REPLACE TABLE contract_fact_bronze AS (
     SELECT
     DISTINCT unnested.value:ID::NUMERIC AS market_id,
     CASE 
