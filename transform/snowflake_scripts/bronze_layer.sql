@@ -1,10 +1,3 @@
-create or replace stage my_s3_stage
- storage_integration = s3_int
- url = 's3://predictit-de-project/raw/'
- ;
-
- list @my_s3_stage;
-
  -- load raw data into first landing table using single variant column
 
  create or replace table raw_data (
@@ -13,30 +6,31 @@ create or replace stage my_s3_stage
 
 CREATE FILE FORMAT json_format
   TYPE = 'JSON';
-  
+
+
 copy into raw_data 
 from @my_s3_stage
 file_format = json_format;
 
-
 -- add in column for date of each market in raw_data
 CREATE OR REPLACE TABLE raw_data_with_date AS
 SELECT 
-    *,
+    $1 as jsondata,
     TO_DATE(REGEXP_SUBSTR(METADATA$FILENAME, '\\d{8}', 1, 1, 'e'), 'MMDDYYYY') AS market_date
 FROM @my_s3_stage
 (FILE_FORMAT => json_format);
+
 
 -- Make sure data got loaded in correctly
 SELECT *
 FROM raw_data_with_date;
 
 
--- Normalization
+-- Normalization and DDL
 -- First table: market dimension table )
 CREATE OR REPLACE TABLE market_dim_bronze AS (
     
-    SELECT
+    SELECT DISTINCT
         unnested.value:ID::NUMERIC AS market_id,
         unnested.value:Name AS long_name,
         unnested.value:ShortName AS short_name,
@@ -49,11 +43,14 @@ CREATE OR REPLACE TABLE market_dim_bronze AS (
     )
 ;
 
+SELECT * FROM market_dim_bronze;
+
 
 -- Contract table DDL
 CREATE OR REPLACE TABLE contract_fact_bronze AS (
-    SELECT
-    DISTINCT unnested.value:ID::NUMERIC AS market_id,
+    SELECT DISTINCT 
+    raw_data_with_date.market_date,
+    unnested.value:ID::NUMERIC AS market_id,
     CASE 
         -- deal with markets that have more than one contract in array form
         WHEN ARRAY_SIZE(unnested.value:Contracts:MarketContract) > 1 THEN
@@ -124,13 +121,13 @@ CREATE OR REPLACE TABLE contract_fact_bronze AS (
         ELSE unnested.value:Contracts:MarketContract:LastClosePrice::DECIMAL(10,2)
     END AS Last_Close_Price
     FROM
-    raw_data,
+    raw_data_with_date,
     LATERAL FLATTEN(jsondata) AS markets,
     LATERAL FLATTEN(markets.value:Markets) AS marketdata,
     LATERAL FLATTEN(marketdata.value) AS unnested,
     LATERAL FLATTEN(PARSE_JSON(unnested.value:Contracts:MarketContract)) AS contract_data
 );
 
-
+SELECT * FROM contract_fact_bronze;
     
 -- Verify results of CTAS statements
