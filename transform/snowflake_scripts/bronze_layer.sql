@@ -1,3 +1,8 @@
+ -- create stage
+ CREATE OR REPLACE STAGE IF NOT EXISTS predictit_s3_stage
+    URL = 's3://predictit-de-project/raw/'
+    STORAGE_INTEGRATION = s3_int;
+
  -- load raw data into first landing table using single variant column
 
 CREATE OR REPLACE TABLE raw_data (
@@ -8,8 +13,8 @@ CREATE FILE FORMAT json_format
   TYPE = 'JSON';
 
 
-copy into raw_data 
-from @my_s3_stage
+COPY INTO raw_data 
+FROM @predictit_s3_stage
 file_format = json_format;
 
 -- add in column for date of each market in raw_data
