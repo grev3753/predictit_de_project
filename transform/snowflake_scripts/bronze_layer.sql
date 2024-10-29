@@ -1,5 +1,12 @@
+-- create database and bronze schema
+CREATE DATABASE predictit_db;
+USE DATABASE predictit_db;
+
+CREATE SCHEMA bronze;
+USE schema bronze;
+
  -- create stage
- CREATE OR REPLACE STAGE IF NOT EXISTS predictit_s3_stage
+ CREATE OR REPLACE STAGE predictit_s3_stage
     URL = 's3://predictit-de-project/raw/'
     STORAGE_INTEGRATION = s3_int;
 
@@ -22,5 +29,6 @@ CREATE OR REPLACE TABLE raw_data_with_date AS
 SELECT 
     $1 as jsondata,
     TO_DATE(REGEXP_SUBSTR(METADATA$FILENAME, '\\d{8}', 1, 1, 'e'), 'MMDDYYYY') AS market_date
-FROM @my_s3_stage
+FROM @predictit_s3_stage
 (FILE_FORMAT => json_format);
+

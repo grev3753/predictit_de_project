@@ -1,8 +1,12 @@
-
+-- Set database and create silver schema
+USE DATABASE predictit_db;
+CREATE SCHEMA silver;
+USE SCHEMA silver;
 
 -- Normalization and DDL
 -- First table: market dimension table )
-CREATE OR REPLACE TABLE market_dim_bronze AS (
+
+CREATE OR REPLACE TABLE market_dim_silver AS (
     
     SELECT DISTINCT
         unnested.value:ID::NUMERIC AS market_id,
@@ -10,17 +14,17 @@ CREATE OR REPLACE TABLE market_dim_bronze AS (
         unnested.value:ShortName AS short_name,
         unnested.value:URL as url,
         unnested.value:Image as image
-    FROM raw_data,
+    FROM bronze.raw_data,
         LATERAL FLATTEN(jsondata) AS markets,
         LATERAL FLATTEN(markets.value:Markets) AS marketdata,
         LATERAL FLATTEN(marketdata.value) as unnested
     )
 ;
 
-SELECT * FROM market_dim_bronze;
+SELECT * FROM market_dim_silver;
 
 -- Contract table DDL
-CREATE OR REPLACE TABLE contract_fact_bronze AS (
+CREATE OR REPLACE TABLE contract_fact_silver AS (
     SELECT DISTINCT 
     raw_data_with_date.market_date,
     unnested.value:ID::NUMERIC AS market_id,
@@ -94,13 +98,13 @@ CREATE OR REPLACE TABLE contract_fact_bronze AS (
         ELSE unnested.value:Contracts:MarketContract:LastClosePrice::DECIMAL(10,2)
     END AS Last_Close_Price
     FROM
-    raw_data_with_date,
+    bronze.raw_data_with_date,
     LATERAL FLATTEN(jsondata) AS markets,
     LATERAL FLATTEN(markets.value:Markets) AS marketdata,
     LATERAL FLATTEN(marketdata.value) AS unnested,
     LATERAL FLATTEN(PARSE_JSON(unnested.value:Contracts:MarketContract)) AS contract_data
 );
 
-SELECT * FROM contract_fact_bronze;
+SELECT * FROM contract_fact_silver;
     
 -- Verify results of CTAS statements
