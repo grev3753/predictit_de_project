@@ -105,6 +105,30 @@ CREATE OR REPLACE TABLE contract_fact_silver AS (
     LATERAL FLATTEN(PARSE_JSON(unnested.value:Contracts:MarketContract)) AS contract_data
 );
 
-SELECT * FROM contract_fact_silver;
+-- contract_fact_silver
+SELECT * FROM PREDICTIT_DB.INFORMATION_SCHEMA.COLUMNS  WHERE Table_name = 'CONTRACT_FACT_SILVER';
+
+    -- clean: correctly null
+    UPDATE contract_fact_silver
+    SET best_buy_no_cost = NULL
+    WHERE best_buy_no_cost['@xsi:nil'] = 'true';
+
+    UPDATE contract_fact_silver
+    SET best_sell_yes_cost = NULL
+    WHERE best_sell_yes_cost['@xsi:nil'] = 'true';
+
+    -- cast columns as correct data types
+    ALTER TABLE contract_fact_silver
+    ALTER best_buy_no_cost SET DATA TYPE NUMBER;
+
+    UPDATE contract_fact_silver
+    SET best_buy_no_cost = TO_NUMBER(best_buy_no_cost,5,2);
+
+    UPDATE contract_fact_silver
+    SET best_sell_yes_cost = TO_NUMBER(best_sell_yes_cost, 5, 2);
     
--- Verify results of CTAS statements
+    -- constraints for correct columns
+    ALTER TABLE contract_fact_silver
+    ALTER market_id SET NOT NULL,
+    ALTER COLUMN contract_id NOT NULL
+    ALTER COLUMN market_date NOT NULL;

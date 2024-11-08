@@ -26,7 +26,7 @@ response = requests.get(API_ENDPOINT, headers={'Accept': 'application/xml'})
 if response.status_code == 200:
     predict_xml = response.text
     # convert xml to dict
-    python_dict=xmltodict.parse(predict_xml)
+    python_dict = xmltodict.parse(predict_xml)
     # convert dict to json string
     json_string = json.dumps(python_dict)
     # place in s3 bucket
