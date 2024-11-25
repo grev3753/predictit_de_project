@@ -1,51 +1,33 @@
-create or replace stage my_s3_stage
- storage_integration = s3_int
- url = 's3://predictit-de-project/raw/'
- ;
+-- Set database and create silver schema
+USE DATABASE predictit_db;
+CREATE SCHEMA silver;
+USE SCHEMA silver;
 
- list @my_s3_stage;
-
- -- load raw data into first landing table using single variant column
-
- create or replace table raw_data (
-     jsondata variant not null
-);
-
-CREATE FILE FORMAT json_format
-  TYPE = 'JSON';
-  
-copy into raw_data 
-from @my_s3_stage
-file_format = json_format;
-
-
--- Make sure data got loaded in correctly
-SELECT *
-FROM raw_data;
-
-
--- Normalization
+-- Normalization and DDL
 -- First table: market dimension table )
-CREATE TABLE market_dim_bronze AS (
+
+CREATE OR REPLACE TABLE market_dim_silver AS (
     
-    SELECT
+    SELECT DISTINCT
         unnested.value:ID::NUMERIC AS market_id,
         unnested.value:Name AS long_name,
         unnested.value:ShortName AS short_name,
         unnested.value:URL as url,
         unnested.value:Image as image
-    FROM raw_data,
+    FROM bronze.raw_data,
         LATERAL FLATTEN(jsondata) AS markets,
         LATERAL FLATTEN(markets.value:Markets) AS marketdata,
         LATERAL FLATTEN(marketdata.value) as unnested
     )
 ;
 
+SELECT * FROM market_dim_silver;
 
--- Contract table
-CREATE TABLE contract_fact_bronze AS (
-    SELECT
-    DISTINCT unnested.value:ID::NUMERIC AS market_id,
+-- Contract table DDL
+CREATE OR REPLACE TABLE contract_fact_silver AS (
+    SELECT DISTINCT 
+    raw_data_with_date.market_date,
+    unnested.value:ID::NUMERIC AS market_id,
     CASE 
         -- deal with markets that have more than one contract in array form
         WHEN ARRAY_SIZE(unnested.value:Contracts:MarketContract) > 1 THEN
@@ -116,13 +98,37 @@ CREATE TABLE contract_fact_bronze AS (
         ELSE unnested.value:Contracts:MarketContract:LastClosePrice::DECIMAL(10,2)
     END AS Last_Close_Price
     FROM
-    raw_data,
+    bronze.raw_data_with_date,
     LATERAL FLATTEN(jsondata) AS markets,
     LATERAL FLATTEN(markets.value:Markets) AS marketdata,
     LATERAL FLATTEN(marketdata.value) AS unnested,
     LATERAL FLATTEN(PARSE_JSON(unnested.value:Contracts:MarketContract)) AS contract_data
 );
 
+-- contract_fact_silver
+SELECT * FROM PREDICTIT_DB.INFORMATION_SCHEMA.COLUMNS  WHERE Table_name = 'CONTRACT_FACT_SILVER';
 
+    -- clean: correctly null
+    UPDATE contract_fact_silver
+    SET best_buy_no_cost = NULL
+    WHERE best_buy_no_cost['@xsi:nil'] = 'true';
+
+    UPDATE contract_fact_silver
+    SET best_sell_yes_cost = NULL
+    WHERE best_sell_yes_cost['@xsi:nil'] = 'true';
+
+    -- cast columns as correct data types
+    ALTER TABLE contract_fact_silver
+    ALTER best_buy_no_cost SET DATA TYPE NUMBER;
+
+    UPDATE contract_fact_silver
+    SET best_buy_no_cost = TO_NUMBER(best_buy_no_cost,5,2);
+
+    UPDATE contract_fact_silver
+    SET best_sell_yes_cost = TO_NUMBER(best_sell_yes_cost, 5, 2);
     
--- Verify results of CTAS statements
+    -- constraints for correct columns
+    ALTER TABLE contract_fact_silver
+    ALTER market_id SET NOT NULL,
+    ALTER COLUMN contract_id NOT NULL
+    ALTER COLUMN market_date NOT NULL;
